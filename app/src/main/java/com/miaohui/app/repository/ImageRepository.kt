@@ -24,6 +24,20 @@ class ImageRepository(private val context: Context) {
         private const val TAG = "ImageRepository"
         private const val MAX_UPLOAD_DIMENSION = 1536
         private const val JPEG_QUALITY = 95
+
+        fun loadBitmap(filePath: String): Bitmap? {
+            return try {
+                BitmapFactory.decodeFile(filePath)
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        fun bitmapToBytes(bitmap: Bitmap): ByteArray {
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            return stream.toByteArray()
+        }
     }
 
     fun isConfigured(): Boolean = SettingsManager.isConfigured(context)
@@ -214,22 +228,6 @@ class ImageRepository(private val context: Context) {
     suspend fun deleteRecordById(id: Long) {
         withContext(Dispatchers.IO) {
             dao.deleteById(id)
-        }
-    }
-
-    companion object {
-        fun loadBitmap(filePath: String): Bitmap? {
-            return try {
-                BitmapFactory.decodeFile(filePath)
-            } catch (e: Exception) {
-                null
-            }
-        }
-
-        fun bitmapToBytes(bitmap: Bitmap): ByteArray {
-            val stream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-            return stream.toByteArray()
         }
     }
 }
