@@ -132,13 +132,22 @@ fun GenerateScreen(
                 // Size selector
                 SectionTitle("尺寸")
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val sizes = listOf("1024x1024" to "方形", "1536x1024" to "横图", "1024x1536" to "竖图")
-                    sizes.forEach { (size, label) ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    val sizes = listOf(
+                        Triple("1024x1024", "1:1", "1024×1024"),
+                        Triple("1536x1024", "3:2", "1536×1024"),
+                        Triple("1024x1536", "2:3", "1024×1536")
+                    )
+                    sizes.forEach { (size, ratio, res) ->
                         FilterChip(
                             selected = state.size == size,
                             onClick = { viewModel.updateSize(size) },
-                            label = { Text(label) }
+                            label = {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(ratio, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    Text(res, style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
+                                }
+                            }
                         )
                     }
                 }

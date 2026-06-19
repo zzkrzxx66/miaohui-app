@@ -20,6 +20,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.miaohui.app.viewmodel.MainViewModel
 import com.miaohui.app.ui.theme.BrandGradient
@@ -160,13 +161,22 @@ fun EditScreen(
             // Size & Quality
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                listOf("1024x1024" to "方形", "1536x1024" to "横图", "1024x1536" to "竖图").forEach { (s, label) ->
+                listOf(
+                    Triple("1024x1024", "1:1", "1024×1024"),
+                    Triple("1536x1024", "3:2", "1536×1024"),
+                    Triple("1024x1536", "2:3", "1024×1536")
+                ).forEach { (s, ratio, res) ->
                     FilterChip(
                         selected = state.size == s,
                         onClick = { viewModel.updateEditSize(s) },
-                        label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                        label = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(ratio, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                Text(res, style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
+                            }
+                        }
                     )
                 }
             }
