@@ -206,10 +206,10 @@ object ImageApiService {
             Result.failure(Exception("无法连接服务器，请检查 API 地址和网络"))
         } catch (e: javax.net.ssl.SSLException) {
             Log.e("ImageApiService", "SSL error", e)
-            Result.failure(Exception("网络连接异常: ${'$'}{e.message ?: "SSL错误"}"))
+            Result.failure(Exception("网络连接异常: " + (e.message ?: "SSL错误")))
         } catch (e: Exception) {
             Log.e("ImageApiService", "Request failed", e)
-            Result.failure(Exception("请求失败: ${'$'}{e.message ?: "未知错误"}"))
+            Result.failure(Exception("请求失败: " + (e.message ?: "未知错误")))
         }
     }
 }
