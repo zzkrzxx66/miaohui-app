@@ -20,6 +20,12 @@ class ImageRepository(private val context: Context) {
     private val dao = AppDatabase.getDatabase(context).imageRecordDao()
     private val imageDir = File(context.filesDir, "images").apply { mkdirs() }
 
+    companion object {
+        private const val TAG = "ImageRepository"
+        private const val MAX_UPLOAD_DIMENSION = 1536
+        private const val JPEG_QUALITY = 95
+    }
+
     fun isConfigured(): Boolean = SettingsManager.isConfigured(context)
 
     suspend fun generateImage(prompt: String, size: String, quality: String): Result<ImageRecord> {
@@ -70,10 +76,13 @@ class ImageRepository(private val context: Context) {
             if (!sourceFile.exists()) {
                 return@withContext Result.failure(Exception("原图文件不存在"))
             }
-            val imageBytes = sourceFile.readBytes()
+
+            // Compress image before upload to avoid timeout
+            val compressedBytes = compressImageForUpload(sourceFile)
+            Log.i(TAG, "Image compressed: ${sourceFile.length()} bytes -> ${compressedBytes.size} bytes")
 
             val result = ImageApiService.editImage(
-                baseUrl, apiKey, model, imageBytes, editPrompt, size, quality
+                baseUrl, apiKey, model, compressedBytes, editPrompt, size, quality
             )
 
             result.fold(
@@ -102,6 +111,66 @@ class ImageRepository(private val context: Context) {
     }
 
     /**
+     * Compress and resize image for API upload.
+     * - Max dimension: 1536px (only shrinks if larger)
+     * - Format: JPEG at 95% quality (near-lossless)
+     * - Returns ByteArray suitable for multipart upload
+     */
+    private fun compressImageForUpload(file: File): ByteArray {
+        return try {
+            // Decode with bounds first to check size
+            val boundsOptions = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(file.absolutePath, boundsOptions)
+
+            val srcW = boundsOptions.outWidth
+            val srcH = boundsOptions.outHeight
+
+            // Calculate inSampleSize to reduce memory
+            var sampleSize = 1
+            val maxDim = maxOf(srcW, srcH)
+            while (maxDim / sampleSize > MAX_UPLOAD_DIMENSION * 2) {
+                sampleSize *= 2
+            }
+
+            // Decode at reduced size
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+            }
+            var bitmap = BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
+
+            if (bitmap == null) {
+                // If decode fails, return raw bytes
+                Log.w(TAG, "Bitmap decode failed, sending raw bytes")
+                return file.readBytes()
+            }
+
+            // Further scale if still too large
+            val curMaxDim = maxOf(bitmap.width, bitmap.height)
+            if (curMaxDim > MAX_UPLOAD_DIMENSION) {
+                val scale = MAX_UPLOAD_DIMENSION.toFloat() / curMaxDim
+                val newW = (bitmap.width * scale).toInt()
+                val newH = (bitmap.height * scale).toInt()
+                val scaled = Bitmap.createScaledBitmap(bitmap, newW, newH, true)
+                if (scaled != bitmap) {
+                    bitmap.recycle()
+                }
+                bitmap = scaled
+            }
+
+            // Compress to JPEG bytes
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
+            bitmap.recycle()
+            stream.toByteArray()
+        } catch (e: Exception) {
+            Log.e(TAG, "Image compression failed, sending raw bytes", e)
+            file.readBytes()
+        }
+    }
+
+    /**
      * Save base64 or url image data to internal storage
      * Returns file path or null on failure
      */
@@ -123,7 +192,7 @@ class ImageRepository(private val context: Context) {
             }
             outFile.absolutePath
         } catch (e: Exception) {
-            Log.e("ImageRepository", "Failed to save image", e)
+            Log.e(TAG, "Failed to save image", e)
             null
         }
     }

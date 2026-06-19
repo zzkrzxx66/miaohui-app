@@ -41,6 +41,18 @@ fun EditScreen(
     var sourceRecord by remember { mutableStateOf<com.miaohui.app.data.ImageRecord?>(null) }
     var loaded by remember { mutableStateOf(false) }
 
+    // Track elapsed time during loading
+    var elapsedSeconds by remember { mutableStateOf(0) }
+    LaunchedEffect(state.isLoading) {
+        if (state.isLoading) {
+            elapsedSeconds = 0
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                elapsedSeconds++
+            }
+        }
+    }
+
     LaunchedEffect(recordId) {
         if (!loaded) {
             viewModel.clearEditState()
@@ -195,7 +207,13 @@ fun EditScreen(
                         if (state.isLoading) {
                             CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
                             Spacer(Modifier.width(12.dp))
-                            Text("正在修改中...", color = Color.White)
+                            val hint = when {
+                                elapsedSeconds < 30 -> "正在修改中..."
+                                elapsedSeconds < 60 -> "AI 正在处理图片..."
+                                elapsedSeconds < 120 -> "马上就好，请耐心等待..."
+                                else -> "仍在处理（已 ${elapsedSeconds}s），请稍候..."
+                            }
+                            Text(hint, color = Color.White)
                         } else {
                             Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Color.White)
                             Spacer(Modifier.width(8.dp))
