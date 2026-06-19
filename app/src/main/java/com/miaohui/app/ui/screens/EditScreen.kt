@@ -4,6 +4,8 @@ import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -158,23 +160,24 @@ fun EditScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Size & Quality
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                listOf(
+            // Size
+            Text("尺寸比例", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf(
                     Triple("1024x1024", "1:1", "1024×1024"),
                     Triple("1536x1024", "3:2", "1536×1024"),
-                    Triple("1024x1536", "2:3", "1024×1536")
-                ).forEach { (s, ratio, res) ->
+                    Triple("1024x1536", "2:3", "1024×1536"),
+                    Triple("3840x2160", "16:9", "3840×2160 4K"),
+                    Triple("2160x3840", "9:16", "2160×3840 4K")
+                )) { (s, ratio, res) ->
                     FilterChip(
                         selected = state.size == s,
                         onClick = { viewModel.updateEditSize(s) },
                         label = {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(ratio, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                Text(res, style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
+                                Text(res, style = MaterialTheme.typography.labelSmall, fontSize = 10.sp, maxLines = 2)
                             }
                         }
                     )

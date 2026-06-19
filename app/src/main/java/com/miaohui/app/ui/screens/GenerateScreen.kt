@@ -130,22 +130,24 @@ fun GenerateScreen(
                 Spacer(Modifier.height(20.dp))
 
                 // Size selector
-                SectionTitle("尺寸")
+                SectionTitle("尺寸比例")
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val sizes = listOf(
                         Triple("1024x1024", "1:1", "1024×1024"),
                         Triple("1536x1024", "3:2", "1536×1024"),
-                        Triple("1024x1536", "2:3", "1024×1536")
+                        Triple("1024x1536", "2:3", "1024×1536"),
+                        Triple("3840x2160", "16:9", "3840×2160\n4K 宽屏"),
+                        Triple("2160x3840", "9:16", "2160×3840\n4K 竖屏")
                     )
-                    sizes.forEach { (size, ratio, res) ->
+                    items(sizes) { (size, ratio, res) ->
                         FilterChip(
                             selected = state.size == size,
                             onClick = { viewModel.updateSize(size) },
                             label = {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(ratio, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                                    Text(res, style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
+                                    Text(res, style = MaterialTheme.typography.labelSmall, fontSize = 10.sp, maxLines = 2)
                                 }
                             }
                         )
