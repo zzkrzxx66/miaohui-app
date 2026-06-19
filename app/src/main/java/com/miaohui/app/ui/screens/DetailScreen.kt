@@ -2,8 +2,10 @@ package com.miaohui.app.ui.screens
 
 import android.content.Intent
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -11,6 +13,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.miaohui.app.data.ImageRecord
 import com.miaohui.app.viewmodel.MainViewModel
+import com.miaohui.app.ui.theme.BrandGradient
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -80,54 +86,88 @@ fun DetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            // Main image
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                shape = MaterialTheme.shapes.large
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                shape = RoundedCornerShape(20.dp)
             ) {
                 AsyncImage(
                     model = File(r.imageFilePath),
                     contentDescription = r.prompt,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)),
                     contentScale = ContentScale.Fit
                 )
             }
 
             Spacer(Modifier.height(16.dp))
 
+            // Info card
             Card(
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                 )
             ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("📝 描述", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Column(Modifier.padding(20.dp)) {
+                    Text("描述", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Text(r.prompt, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+
+                    Row(Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("类型", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (r.type == "edit") "✏️ 编辑" else "🎨 生成", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("尺寸", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(r.size, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
-                    Text("📊 参数", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    Text("类型: ${if (r.type == "edit") "✏️ 编辑" else "🎨 生成"}")
-                    Text("尺寸: ${r.size}")
-                    Text("质量: ${r.quality}")
-                    Text("模型: ${r.model}")
-                    Text("时间: ${dateFormat.format(Date(r.createdAt))}")
+                    Row(Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("质量", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(r.quality, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("模型", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(r.model, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("时间", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(dateFormat.format(Date(r.createdAt)), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 }
             }
 
             Spacer(Modifier.height(16.dp))
 
+            // Actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
+                // Edit button — gradient
+                Surface(
                     onClick = { onNavigateToEdit(r.id) },
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.large
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color.Transparent
                 ) {
-                    Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("修改图片")
+                    Box(
+                        modifier = Modifier.background(Brush.horizontalGradient(BrandGradient)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("修改图片", color = Color.White, fontWeight = FontWeight.Medium)
+                        }
+                    }
                 }
                 OutlinedButton(
                     onClick = {
@@ -137,8 +177,8 @@ fun DetailScreen(
                             }
                         }
                     },
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.large
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
@@ -149,9 +189,7 @@ fun DetailScreen(
             OutlinedButton(
                 onClick = {
                     val file = File(r.imageFilePath)
-                    val uri = FileProvider.getUriForFile(
-                        context, "${context.packageName}.fileprovider", file
-                    )
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "image/png"
                         putExtra(Intent.EXTRA_STREAM, uri)
@@ -159,8 +197,8 @@ fun DetailScreen(
                     }
                     context.startActivity(Intent.createChooser(shareIntent, "分享图片"))
                 },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(14.dp)
             ) {
                 Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
@@ -169,21 +207,22 @@ fun DetailScreen(
 
             if (children.isNotEmpty()) {
                 Spacer(Modifier.height(24.dp))
-                Text("🔄 修改历史", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("修改历史", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 children.forEach { child ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(8.dp),
+                            modifier = Modifier.padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             AsyncImage(
                                 model = File(child.imageFilePath),
                                 contentDescription = child.prompt,
-                                modifier = Modifier.size(80.dp),
+                                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(10.dp)),
                                 contentScale = ContentScale.Crop
                             )
                             Spacer(Modifier.width(12.dp))
@@ -210,16 +249,15 @@ fun DetailScreen(
             title = { Text("删除作品") },
             text = { Text("确定要删除这张图片吗？删除后无法恢复。") },
             confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        record?.let { viewModel.repository.deleteRecord(it) }
+                TextButton(
+                    onClick = {
+                        record?.let { scope.launch { viewModel.repository.deleteRecord(it) } }
+                        showDeleteDialog = false
                         onBack()
                     }
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                ) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("取消") }
-            }
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("取消") } }
         )
     }
 }

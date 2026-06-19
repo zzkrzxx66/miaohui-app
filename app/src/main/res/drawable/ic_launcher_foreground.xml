@@ -1,10 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  妙绘 App 图标前景 — 画笔 + 魔法星花
+  纯白矢量，配合渐变背景形成 adaptive icon
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- 画笔主体（斜放） -->
+    <group
+        android:rotation="-45"
+        android:pivotX="54"
+        android:pivotY="54">
+
+        <!-- 笔杆 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M48,24 L60,24 L60,58 L48,58 Z" />
+
+        <!-- 金属箍 -->
+        <path
+            android:fillColor="#F5F5F5"
+            android:pathData="M46,56 L62,56 L62,62 L46,62 Z" />
+
+        <!-- 笔尖三角 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M48,62 L60,62 L54,80 Z" />
+    </group>
+
+    <!-- 魔法星花 1（右上） -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,28 C40,28 30,38 30,52 L30,72 C30,76 34,80 38,80 L70,80 C74,80 78,76 78,72 L78,52 C78,38 68,28 54,28 Z M50,42 L58,42 L58,52 L68,52 L68,60 L58,60 L58,70 L50,70 L50,60 L40,60 L40,52 L50,52 Z" />
+        android:pathData="M76,28 C76,28 79,24 82,24 C79,24 76,20 76,20 C76,20 73,24 70,24 C73,24 76,28 76,28 Z" />
+
+    <!-- 魔法星花 2（大，右下） -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M82,54 C82,54 86,48 91,48 C86,48 82,42 82,42 C82,42 78,48 73,48 C78,48 82,54 82,54 Z" />
+
+    <!-- 小点装饰 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M72,72 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,36 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
 </vector>
