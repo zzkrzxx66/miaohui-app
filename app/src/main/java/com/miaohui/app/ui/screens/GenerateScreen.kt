@@ -153,6 +153,7 @@ fun GenerateScreen(
                 ResultImageCard(
                     record = record,
                     viewModel = viewModel,
+                    snackbarHostState = snackbarHostState,
                     onEdit = { onNavigateToEdit(record.id) },
                     onShare = {
                         val file = File(record.imageFilePath)
@@ -179,12 +180,12 @@ fun GenerateScreen(
 fun ResultImageCard(
     record: ImageRecord,
     viewModel: MainViewModel,
+    snackbarHostState: SnackbarHostState,
     onEdit: () -> Unit,
     onShare: () -> Unit,
     onNew: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
     var saving by remember { mutableStateOf(false) }
 
     Card(
