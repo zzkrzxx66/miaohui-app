@@ -12,18 +12,22 @@ import java.util.concurrent.TimeUnit
 
 object ImageApiService {
 
+    private const val MAX_RETRIES = 3
+    private const val RETRY_DELAY_MS = 2000L
+
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(600, TimeUnit.SECONDS)
-        .writeTimeout(300, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
     private fun normalizeBaseUrl(baseUrl: String): String = baseUrl.trimEnd('/')
 
     /**
-     * Generate image from text prompt
-     * @return base64 encoded image string
+     * Generate image from text prompt.
+     * Auto-retries up to MAX_RETRIES on 504/timeout.
+     * @return base64 encoded image string (or "url:..." for URL responses)
      */
     fun generateImage(
         baseUrl: String,
@@ -48,17 +52,18 @@ object ImageApiService {
             .url(url)
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "application/json")
-            .header("User-Agent", "MiaoHui/1.2")
+            .header("User-Agent", "MiaoHui/1.3")
             .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        return executeRequest(request)
+        return executeWithRetry(request)
     }
 
     /**
-     * Edit existing image with a text prompt
-     * @param imageBytes the source image bytes (compressed PNG/JPEG)
-     * @return base64 encoded edited image string
+     * Edit existing image with a text prompt.
+     * Auto-retries up to MAX_RETRIES on 504/timeout.
+     * @param imageBytes the source image bytes (compressed JPEG)
+     * @return base64 encoded edited image string (or "url:..." for URL responses)
      */
     fun editImage(
         baseUrl: String,
@@ -97,21 +102,68 @@ object ImageApiService {
         val request = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $apiKey")
-            .header("User-Agent", "MiaoHui/1.2")
+            .header("User-Agent", "MiaoHui/1.3")
             .post(multipartBuilder.build())
             .build()
 
-        return executeRequest(request)
+        return executeWithRetry(request)
+    }
+
+    /**
+     * Execute request with automatic retry on transient failures (504, timeout).
+     */
+    private fun executeWithRetry(request: Request): Result<String> {
+        var lastError: String = ""
+        for (attempt in 1..MAX_RETRIES) {
+            Log.d("ImageApiService", "API attempt $attempt/$MAX_RETRIES")
+            val result = executeRequest(request)
+            if (result.isSuccess) return result
+
+            val error = result.exceptionOrNull()?.message ?: "未知错误"
+            lastError = error
+
+            // Determine if we should retry
+            val shouldRetry = error.contains("504") ||
+                error.contains("超时") ||
+                error.contains("timeout") ||
+                error.contains("Gateway") ||
+                error.contains("502") ||
+                error.contains("503")
+
+            if (!shouldRetry || attempt == MAX_RETRIES) break
+
+            Log.d("ImageApiService", "Will retry in ${RETRY_DELAY_MS}ms (error: $error)")
+            Thread.sleep(RETRY_DELAY_MS)
+        }
+
+        val finalMsg = if (lastError.contains("504") || lastError.contains("Gateway")) {
+            "API 服务器网关超时 (504)。\n\n" +
+                "这是 API 服务端的限制，不是您的手机或网络问题。\n" +
+                "AI 处理图片需要较长时间，已自动重试 $MAX_RETRIES 次仍失败。\n" +
+                "建议换个时间再试，或更换其他 API 地址。"
+        } else if (lastError.contains("超时") || lastError.contains("timeout")) {
+            "请求超时。AI 处理图片需要较长时间，已自动重试 $MAX_RETRIES 次。\n" +
+                "建议更换网络环境或稍后重试。"
+        } else {
+            lastError
+        }
+
+        return Result.failure(Exception(finalMsg))
     }
 
     private fun executeRequest(request: Request): Result<String> {
         return try {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: ""
+
+                // Detect 504 Gateway Timeout (HTML response from nginx)
+                if (response.code == 504) {
+                    return Result.failure(Exception("504 Gateway Timeout: 服务器网关超时"))
+                }
+
                 if (!response.isSuccessful) {
                     val errorMsg = try {
                         val json = JSONObject(body)
-                        // Try error.message or error object as string
                         val errObj = json.opt("error")
                         if (errObj is JSONObject) {
                             errObj.optString("message", body)
@@ -133,7 +185,6 @@ object ImageApiService {
                     }
 
                     val firstItem = dataArray.getJSONObject(0)
-                    // Try b64_json first, then url
                     val b64 = firstItem.optString("b64_json", "")
                     if (b64.isNotEmpty()) {
                         Result.success(b64)
@@ -149,20 +200,16 @@ object ImageApiService {
             }
         } catch (e: java.net.SocketTimeoutException) {
             Log.e("ImageApiService", "Timeout", e)
-            val isWrite = e.message?.contains("write", ignoreCase = true) == true
-            Result.failure(Exception(
-                if (isWrite) "上传图片超时，请检查网络后重试"
-                else "服务器响应超时，AI 图片处理需要较长时间，请稍后重试"
-            ))
+            Result.failure(Exception("服务器响应超时"))
         } catch (e: java.net.UnknownHostException) {
             Log.e("ImageApiService", "Unknown host", e)
             Result.failure(Exception("无法连接服务器，请检查 API 地址和网络"))
         } catch (e: javax.net.ssl.SSLException) {
             Log.e("ImageApiService", "SSL error", e)
-            Result.failure(Exception("网络连接异常: ${e.message ?: "SSL错误"}"))
+            Result.failure(Exception("网络连接异常: ${'$'}{e.message ?: "SSL错误"}"))
         } catch (e: Exception) {
             Log.e("ImageApiService", "Request failed", e)
-            Result.failure(Exception("请求失败: ${e.message ?: "未知错误"}"))
+            Result.failure(Exception("请求失败: ${'$'}{e.message ?: "未知错误"}"))
         }
     }
 }

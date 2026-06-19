@@ -188,10 +188,35 @@ fun SettingsScreen() {
                     }
                 }
 
+                Spacer(Modifier.height(16.dp))
+
+                // FAQ Card - 504 timeout notice
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("⚠️ 常见问题", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "如果生成或编辑图片时提示 504 超时错误：\n\n" +
+                                "• 这是 API 服务端的网关超时限制\n" +
+                                "• 不是您的手机或网络问题\n" +
+                                "• App 会自动重试 3 次，请耐心等待\n" +
+                                "• 建议换个时间再试，或更换 API 地址",
+                            style = MaterialTheme.typography.bodySmall,
+                            lineHeight = MaterialTheme.typography.bodySmall.lineHeight
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(24.dp))
 
                 Text(
-                    "妙绘 v1.2 · AI 图片生成与编辑",
+                    "妙绘 v1.3 · AI 图片生成与编辑",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth(),
