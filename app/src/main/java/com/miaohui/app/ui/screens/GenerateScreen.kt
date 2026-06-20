@@ -1,9 +1,8 @@
 package com.miaohui.app.ui.screens
 
 import android.content.Intent
-import android.activity.compose.rememberLauncherForActivityResult
-import android.activity.result.PickVisualMediaRequest
-import android.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -47,7 +46,7 @@ fun GenerateScreen(
 
     // Photo picker for reference image
     val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
+        ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
             // Copy Uri to cache file
@@ -152,9 +151,7 @@ fun GenerateScreen(
                 } else {
                     Surface(
                         onClick = {
-                            imagePicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
+                            imagePicker.launch("image/*")
                         },
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(16.dp),
