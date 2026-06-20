@@ -125,6 +125,67 @@ class ImageRepository(private val context: Context) {
     }
 
     /**
+     * 以图生图：上传参考图 + prompt → 生成新图片
+     */
+    suspend fun imageToImage(
+        imagePath: String,
+        prompt: String,
+        size: String,
+        quality: String
+    ): Result<ImageRecord> {
+        return withContext(Dispatchers.IO) {
+            val baseUrl = SettingsManager.getApiBaseUrl(context)
+            val apiKey = SettingsManager.getApiKey(context)
+            val model = SettingsManager.getModelName(context)
+
+            val sourceFile = File(imagePath)
+            if (!sourceFile.exists()) {
+                return@withContext Result.failure(Exception("参考图片不存在"))
+            }
+
+            // Copy selected image to app's image directory for record
+            val timestamp = System.currentTimeMillis()
+            val savedRef = File(imageDir, "ref_$timestamp.png")
+            try {
+                sourceFile.inputStream().use { input ->
+                    savedRef.outputStream().use { output -> input.copyTo(output) }
+                }
+            } catch (e: Exception) {
+                return@withContext Result.failure(Exception("读取参考图片失败"))
+            }
+
+            val compressedBytes = compressImageForUpload(savedRef)
+            Log.i(TAG, "Image-to-image: ref compressed ${savedRef.length()} -> ${compressedBytes.size} bytes")
+
+            val result = ImageApiService.editImage(
+                baseUrl, apiKey, model, compressedBytes, prompt, size, quality
+            )
+
+            result.fold(
+                onSuccess = { imageData ->
+                    val filePath = saveImageData(imageData)
+                    if (filePath != null) {
+                        val record = ImageRecord(
+                            prompt = prompt,
+                            imageFilePath = filePath,
+                            size = size,
+                            quality = quality,
+                            model = model,
+                            createdAt = System.currentTimeMillis(),
+                            type = "img2img"
+                        )
+                        val id = dao.insert(record)
+                        Result.success(record.copy(id = id))
+                    } else {
+                        Result.failure(Exception("生成图片保存失败"))
+                    }
+                },
+                onFailure = { Result.failure(it) }
+            )
+        }
+    }
+
+    /**
      * Compress and resize image for API upload.
      * - Max dimension: 1536px (only shrinks if larger)
      * - Format: JPEG at 95% quality (near-lossless)

@@ -1,6 +1,9 @@
 package com.miaohui.app.ui.screens
 
 import android.content.Intent
+import android.activity.compose.rememberLauncherForActivityResult
+import android.activity.result.PickVisualMediaRequest
+import android.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -41,6 +44,24 @@ fun GenerateScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Photo picker for reference image
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            // Copy Uri to cache file
+            val cacheFile = File(context.cacheDir, "ref_${System.currentTimeMillis()}.png")
+            try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    cacheFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                viewModel.updateReferenceImage(cacheFile.absolutePath)
+            } catch (e: Exception) {
+                scope.launch { snackbarHostState.showSnackbar("读取图片失败") }
+            }
+        }
+    }
 
     LaunchedEffect(state.error) {
         state.error?.let {
@@ -96,6 +117,74 @@ fun GenerateScreen(
             // ===== Content =====
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 Spacer(Modifier.height(20.dp))
+
+                // ===== Reference Image (图生图) =====
+                if (state.referenceImagePath != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                    ) {
+                        AsyncImage(
+                            model = state.referenceImagePath,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        // Overlay remove button
+                        SmallFloatingActionButton(
+                            onClick = { viewModel.updateReferenceImage(null) },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp),
+                            containerColor = Color.Black.copy(alpha = 0.6f)
+                        ) {
+                            Icon(Icons.Filled.Close, contentDescription = "移除", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "📝 以图生图模式：基于参考图生成新图片",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Surface(
+                        onClick = {
+                            imagePicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Filled.AddPhotoAlternate,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("📷 上传参考图（以图生图）", style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Icon(
+                                Icons.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
 
                 // Prompt input
                 OutlinedTextField(
@@ -202,10 +291,15 @@ fun GenerateScreen(
                                 Spacer(Modifier.width(12.dp))
                                 Text("正在生成中，请稍候...", color = Color.White, fontWeight = FontWeight.Medium)
                             } else {
-                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color.White)
+                                Icon(
+                                    if (state.referenceImagePath != null) Icons.Filled.Image
+                                    else Icons.Filled.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color.White
+                                )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "生成图片",
+                                    if (state.referenceImagePath != null) "以图生图" else "生成图片",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     style = MaterialTheme.typography.titleMedium

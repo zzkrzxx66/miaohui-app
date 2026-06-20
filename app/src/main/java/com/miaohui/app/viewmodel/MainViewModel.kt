@@ -22,7 +22,8 @@ data class GenerateUiState(
     val error: String? = null,
     val prompt: String = "",
     val size: String = "1024x1024",
-    val quality: String = "high"
+    val quality: String = "high",
+    val referenceImagePath: String? = null
 )
 
 data class EditUiState(
@@ -70,6 +71,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _generateState.value = _generateState.value.copy(quality = quality)
     }
 
+    fun updateReferenceImage(path: String?) {
+        _generateState.value = _generateState.value.copy(referenceImagePath = path)
+    }
+
     fun generate() {
         val state = _generateState.value
         if (state.prompt.isBlank()) {
@@ -83,7 +88,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _generateState.value = state.copy(isLoading = true, error = null)
-            val result = repository.generateImage(state.prompt, state.size, state.quality)
+
+            // 有参考图 → 图生图，无参考图 → 文生图
+            val result = if (state.referenceImagePath != null) {
+                repository.imageToImage(state.referenceImagePath, state.prompt, state.size, state.quality)
+            } else {
+                repository.generateImage(state.prompt, state.size, state.quality)
+            }
+
             result.fold(
                 onSuccess = { record ->
                     _generateState.value = _generateState.value.copy(
