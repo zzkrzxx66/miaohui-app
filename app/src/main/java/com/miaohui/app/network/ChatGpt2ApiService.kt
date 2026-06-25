@@ -31,6 +31,33 @@ object ChatGpt2ApiService {
 
     private fun normalizeBaseUrl(baseUrl: String): String = baseUrl.trimEnd('/')
 
+    /**
+     * Strip /v1 suffix for endpoints that are NOT under the OpenAI /v1 prefix.
+     * e.g. /health, /api/image-tasks, /api/images, /api/editable-file-tasks
+     */
+    private fun rootBaseUrl(baseUrl: String): String {
+        val normalized = normalizeBaseUrl(baseUrl)
+        return if (normalized.endsWith("/v1", ignoreCase = true)) {
+            normalized.substring(0, normalized.length - 3)
+        } else {
+            normalized
+        }
+    }
+
+    /**
+     * Check if response body is HTML (not JSON) and return a helpful error.
+     */
+    private fun checkHtmlResponse(body: String, endpoint: String): String? {
+        val trimmed = body.trimStart()
+        if (trimmed.startsWith("<!DOCTYPE", ignoreCase = true) ||
+            trimmed.startsWith("<html", ignoreCase = true) ||
+            trimmed.startsWith("<!doctype", ignoreCase = true)
+        ) {
+            return "接口 $endpoint 返回了 HTML 页面而非 JSON。\n请检查 API 地址是否正确（不应包含 /v1 后缀用于此接口）。"
+        }
+        return null
+    }
+
     private fun authHeaders(baseUrl: String, apiKey: String): Request.Builder {
         return Request.Builder()
             .header("Authorization", "Bearer $apiKey")
@@ -58,8 +85,12 @@ object ChatGpt2ApiService {
                 if (!response.isSuccessful) {
                     Result.failure(Exception("HTTP ${response.code}: ${body.take(300)}"))
                 } else {
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data") ?: JSONArray()
+                    val htmlError = checkHtmlResponse(body, "/models")
+                    if (htmlError != null) {
+                        Result.failure(Exception(htmlError))
+                    } else {
+                        val json = JSONObject(body)
+                        val data = json.optJSONArray("data") ?: JSONArray()
                     val models = mutableListOf<ModelInfo>()
                     for (i in 0 until data.length()) {
                         val item = data.getJSONObject(i)
@@ -78,6 +109,7 @@ object ChatGpt2ApiService {
                         models.add(ModelInfo("auto", "openai", true))
                     }
                     Result.success(models)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -98,7 +130,8 @@ object ChatGpt2ApiService {
     )
 
     fun fetchHealth(baseUrl: String, apiKey: String): Result<HealthInfo> {
-        val url = "${normalizeBaseUrl(baseUrl)}/health?format=json"
+        val root = rootBaseUrl(baseUrl)
+        val url = "$root/health?format=json"
         val request = authHeaders(baseUrl, apiKey)
             .url(url)
             .get()
@@ -110,15 +143,20 @@ object ChatGpt2ApiService {
                 if (!response.isSuccessful) {
                     Result.failure(Exception("HTTP ${response.code}"))
                 } else {
-                    val json = JSONObject(body)
-                    val info = HealthInfo(
-                        totalAccounts = json.optInt("total_accounts", json.optInt("total", 0)),
-                        availableAccounts = json.optInt("available_accounts", json.optInt("available", 0)),
-                        rateLimited = json.optInt("rate_limited", json.optInt("limited", 0)),
-                        quotaLow = json.optInt("quota_low", json.optInt("low_quota", 0)),
-                        status = json.optString("status", if (response.isSuccessful) "ok" else "unknown")
-                    )
-                    Result.success(info)
+                    val htmlError = checkHtmlResponse(body, "/health")
+                    if (htmlError != null) {
+                        Result.failure(Exception(htmlError))
+                    } else {
+                        val json = JSONObject(body)
+                        val info = HealthInfo(
+                            totalAccounts = json.optInt("total_accounts", json.optInt("total", 0)),
+                            availableAccounts = json.optInt("available_accounts", json.optInt("available", 0)),
+                            rateLimited = json.optInt("rate_limited", json.optInt("limited", 0)),
+                            quotaLow = json.optInt("quota_low", json.optInt("low_quota", 0)),
+                            status = json.optString("status", if (response.isSuccessful) "ok" else "unknown")
+                        )
+                        Result.success(info)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -146,7 +184,8 @@ object ChatGpt2ApiService {
         quality: String,
         n: Int = 1
     ): Result<ImageTask> {
-        val url = "${normalizeBaseUrl(baseUrl)}/api/image-tasks/generations"
+        val root = rootBaseUrl(baseUrl)
+        val url = "$root/api/image-tasks/generations"
         val jsonBody = JSONObject().apply {
             put("model", model)
             put("prompt", prompt)
@@ -200,7 +239,8 @@ object ChatGpt2ApiService {
     }
 
     fun pollTask(baseUrl: String, apiKey: String, taskId: String): Result<ImageTask> {
-        val url = "${normalizeBaseUrl(baseUrl)}/api/image-tasks/$taskId"
+        val root = rootBaseUrl(baseUrl)
+        val url = "$root/api/image-tasks/$taskId"
         val request = authHeaders(baseUrl, apiKey)
             .url(url)
             .get()
@@ -259,7 +299,7 @@ object ChatGpt2ApiService {
         prompt: String,
         imageBase64: String? = null
     ): Result<EditableFileTask> {
-        val url = "${normalizeBaseUrl(baseUrl)}/v1/ppt/generations"
+        val url = "${normalizeBaseUrl(baseUrl)}/ppt/generations"
         val jsonBody = JSONObject().apply {
             put("prompt", prompt)
             if (imageBase64 != null) put("image", imageBase64)
@@ -301,7 +341,7 @@ object ChatGpt2ApiService {
         prompt: String,
         imageBase64: String? = null
     ): Result<EditableFileTask> {
-        val url = "${normalizeBaseUrl(baseUrl)}/v1/psd/generations"
+        val url = "${normalizeBaseUrl(baseUrl)}/psd/generations"
         val jsonBody = JSONObject().apply {
             put("prompt", prompt)
             if (imageBase64 != null) put("image", imageBase64)
@@ -343,7 +383,8 @@ object ChatGpt2ApiService {
         taskId: String,
         fileType: String
     ): Result<EditableFileTask> {
-        val url = "${normalizeBaseUrl(baseUrl)}/api/editable-file-tasks/$taskId"
+        val root = rootBaseUrl(baseUrl)
+        val url = "$root/api/editable-file-tasks/$taskId"
         val request = authHeaders(baseUrl, apiKey)
             .url(url)
             .get()
@@ -388,7 +429,8 @@ object ChatGpt2ApiService {
         page: Int = 1,
         pageSize: Int = 20
     ): Result<List<ServerImage>> {
-        val url = "${normalizeBaseUrl(baseUrl)}/api/images?page=$page&page_size=$pageSize"
+        val root = rootBaseUrl(baseUrl)
+        val url = "$root/api/images?page=$page&page_size=$pageSize"
         val request = authHeaders(baseUrl, apiKey)
             .url(url)
             .get()
@@ -410,7 +452,7 @@ object ChatGpt2ApiService {
                         if (imgUrl.isNotEmpty()) {
                             // Make URL absolute if relative
                             val fullUrl = if (imgUrl.startsWith("http")) imgUrl
-                                else "${normalizeBaseUrl(baseUrl)}$imgUrl"
+                                else "${rootBaseUrl(baseUrl)}$imgUrl"
                             images.add(ServerImage(
                                 id = id,
                                 url = fullUrl,
