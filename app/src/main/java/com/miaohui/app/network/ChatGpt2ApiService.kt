@@ -126,7 +126,9 @@ object ChatGpt2ApiService {
         val rateLimited: Int = 0,
         val quotaLow: Int = 0,
         val status: String = "",
-        val details: List<String> = emptyList()
+        val totalQuota: Int = 0,
+        val totalSuccess: Int = 0,
+        val totalFail: Int = 0
     )
 
     fun fetchHealth(baseUrl: String, apiKey: String): Result<HealthInfo> {
@@ -148,12 +150,16 @@ object ChatGpt2ApiService {
                         Result.failure(Exception(htmlError))
                     } else {
                         val json = JSONObject(body)
+                        val accounts = json.optJSONObject("accounts")
                         val info = HealthInfo(
-                            totalAccounts = json.optInt("total_accounts", json.optInt("total", 0)),
-                            availableAccounts = json.optInt("available_accounts", json.optInt("available", 0)),
-                            rateLimited = json.optInt("rate_limited", json.optInt("limited", 0)),
-                            quotaLow = json.optInt("quota_low", json.optInt("low_quota", 0)),
-                            status = json.optString("status", if (response.isSuccessful) "ok" else "unknown")
+                            totalAccounts = accounts?.optInt("total", 0) ?: 0,
+                            availableAccounts = accounts?.optInt("active", 0) ?: 0,
+                            rateLimited = accounts?.optInt("limited", 0) ?: 0,
+                            quotaLow = (accounts?.optInt("abnormal", 0) ?: 0) + (accounts?.optInt("disabled", 0) ?: 0),
+                            status = json.optString("status", if (response.isSuccessful) "ok" else "unknown"),
+                            totalQuota = accounts?.optInt("total_quota", 0) ?: 0,
+                            totalSuccess = accounts?.optInt("total_success", 0) ?: 0,
+                            totalFail = accounts?.optInt("total_fail", 0) ?: 0
                         )
                         Result.success(info)
                     }
@@ -418,6 +424,7 @@ object ChatGpt2ApiService {
     data class ServerImage(
         val id: String,
         val url: String,
+        val thumbnailUrl: String = "",
         val prompt: String = "",
         val model: String = "",
         val createdAt: String = ""
@@ -443,22 +450,28 @@ object ChatGpt2ApiService {
                     Result.failure(Exception("HTTP ${response.code}"))
                 } else {
                     val json = JSONObject(body)
-                    val data = json.optJSONArray("data") ?: json.optJSONArray("images") ?: JSONArray()
+                    val data = json.optJSONArray("items") ?: json.optJSONArray("data") ?: json.optJSONArray("images") ?: JSONArray()
                     val images = mutableListOf<ServerImage>()
                     for (i in 0 until data.length()) {
                         val item = data.getJSONObject(i)
-                        val id = item.optString("id", i.toString())
+                        val id = item.optString("name", item.optString("id", i.toString()))
                         val imgUrl = item.optString("url", item.optString("image_url", ""))
+                        val thumbUrl = item.optString("thumbnail_url", imgUrl)
                         if (imgUrl.isNotEmpty()) {
-                            // Make URL absolute if relative
-                            val fullUrl = if (imgUrl.startsWith("http")) imgUrl
-                                else "${rootBaseUrl(baseUrl)}$imgUrl"
+                            // Make URL absolute if relative, and upgrade http to https
+                            val fullUrl = if (imgUrl.startsWith("http")) imgUrl.replaceFirst("http://", "https://")
+                                else "$root$imgUrl".replaceFirst("http://", "https://")
+                            val fullThumb = if (thumbUrl.startsWith("http")) thumbUrl.replaceFirst("http://", "https://")
+                                else "$root$thumbUrl".replaceFirst("http://", "https://")
+                            val w = item.optInt("width", 0)
+                            val h = item.optInt("height", 0)
                             images.add(ServerImage(
                                 id = id,
                                 url = fullUrl,
-                                prompt = item.optString("prompt", ""),
-                                model = item.optString("model", ""),
-                                createdAt = item.optString("created_at", item.optString("createdAt", ""))
+                                thumbnailUrl = fullThumb,
+                                prompt = item.optString("created_at", ""),
+                                model = if (w > 0 && h > 0) "${w}x${h}" else "",
+                                createdAt = item.optString("created_at", "")
                             ))
                         }
                     }

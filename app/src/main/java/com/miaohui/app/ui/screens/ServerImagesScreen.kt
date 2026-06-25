@@ -135,15 +135,15 @@ private fun ServerImageItem(
     ) {
         Column {
             AsyncImage(
-                model = image.url,
-                contentDescription = image.prompt,
+                model = image.thumbnailUrl.ifEmpty { image.url },
+                contentDescription = image.createdAt,
                 modifier = Modifier.fillMaxWidth().aspectRatio(1f),
                 contentScale = ContentScale.Crop
             )
-            if (image.prompt.isNotEmpty()) {
+            if (image.createdAt.isNotEmpty()) {
                 Column(Modifier.padding(10.dp)) {
                     Text(
-                        image.prompt,
+                        image.createdAt,
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
