@@ -165,6 +165,10 @@ object ImageApiService {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: ""
 
+                if (response.code == 413) {
+                    return Result.failure(Exception("上传数据过大 (413)。图片已自动压缩但仍超出服务器限制，建议使用更小尺寸的图片。"))
+                }
+
                 if (response.code == 504) {
                     return Result.failure(Exception("504 Gateway Timeout: 服务器网关超时"))
                 }

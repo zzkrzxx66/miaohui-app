@@ -22,8 +22,10 @@ class ImageRepository(private val context: Context) {
 
     companion object {
         private const val TAG = "ImageRepository"
-        private const val MAX_UPLOAD_DIMENSION = 1536
-        private const val JPEG_QUALITY = 95
+        private const val MAX_UPLOAD_DIMENSION = 1024
+        private const val JPEG_QUALITY = 80
+        private const val MAX_UPLOAD_BYTES = 800_000 // 800KB per image, safe for nginx 1MB limit
+        private const val MAX_MASK_DIMENSION = 512
 
         fun loadBitmap(filePath: String): Bitmap? {
             return try {
@@ -103,7 +105,7 @@ class ImageRepository(private val context: Context) {
             // Read mask if provided
             val maskBytes = if (maskPath != null) {
                 val maskFile = File(maskPath)
-                if (maskFile.exists()) compressImageForUpload(maskFile) else null
+                if (maskFile.exists()) compressMaskForUpload(maskFile) else null
             } else null
 
             val result = ImageApiService.editImage(
@@ -166,7 +168,7 @@ class ImageRepository(private val context: Context) {
 
             val maskBytes = if (maskPath != null) {
                 val maskFile = File(maskPath)
-                if (maskFile.exists()) compressImageForUpload(maskFile) else null
+                if (maskFile.exists()) compressMaskForUpload(maskFile) else null
             } else null
 
             val result = ImageApiService.editImage(
@@ -262,11 +264,25 @@ class ImageRepository(private val context: Context) {
 
     /**
      * Compress and resize image for API upload.
-     * - Max dimension: 1536px (only shrinks if larger)
-     * - Format: JPEG at 95% quality (near-lossless)
+     * - Max dimension: 1024px (only shrinks if larger)
+     * - Format: JPEG with progressive quality reduction
+     * - Auto-reduces quality if result exceeds MAX_UPLOAD_BYTES
      * - Returns ByteArray suitable for multipart upload
      */
     private fun compressImageForUpload(file: File): ByteArray {
+        return compressForUpload(file, MAX_UPLOAD_DIMENSION, MAX_UPLOAD_BYTES)
+    }
+
+    /**
+     * Compress mask image more aggressively:
+     * - Max dimension: 512px (mask only needs shape info)
+     * - Max size: 200KB
+     */
+    private fun compressMaskForUpload(file: File): ByteArray {
+        return compressForUpload(file, MAX_MASK_DIMENSION, 200_000)
+    }
+
+    private fun compressForUpload(file: File, maxDimension: Int, maxBytes: Int): ByteArray {
         return try {
             // Decode with bounds first to check size
             val boundsOptions = BitmapFactory.Options().apply {
@@ -280,7 +296,7 @@ class ImageRepository(private val context: Context) {
             // Calculate inSampleSize to reduce memory
             var sampleSize = 1
             val maxDim = maxOf(srcW, srcH)
-            while (maxDim / sampleSize > MAX_UPLOAD_DIMENSION * 2) {
+            while (maxDim / sampleSize > maxDimension * 2) {
                 sampleSize *= 2
             }
 
@@ -291,15 +307,14 @@ class ImageRepository(private val context: Context) {
             var bitmap = BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
 
             if (bitmap == null) {
-                // If decode fails, return raw bytes
                 Log.w(TAG, "Bitmap decode failed, sending raw bytes")
                 return file.readBytes()
             }
 
             // Further scale if still too large
             val curMaxDim = maxOf(bitmap.width, bitmap.height)
-            if (curMaxDim > MAX_UPLOAD_DIMENSION) {
-                val scale = MAX_UPLOAD_DIMENSION.toFloat() / curMaxDim
+            if (curMaxDim > maxDimension) {
+                val scale = maxDimension.toFloat() / curMaxDim
                 val newW = (bitmap.width * scale).toInt()
                 val newH = (bitmap.height * scale).toInt()
                 val scaled = Bitmap.createScaledBitmap(bitmap, newW, newH, true)
@@ -309,11 +324,23 @@ class ImageRepository(private val context: Context) {
                 bitmap = scaled
             }
 
-            // Compress to JPEG bytes
-            val stream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
+            // Progressive compression: try decreasing quality until under size limit
+            var quality = JPEG_QUALITY
+            var result: ByteArray
+            while (true) {
+                val stream = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+                result = stream.toByteArray()
+                if (result.size <= maxBytes || quality <= 30) {
+                    break
+                }
+                quality -= 15
+                Log.d(TAG, "Compressed ${result.size} bytes > ${maxBytes}, retrying at quality ${quality}")
+            }
+
             bitmap.recycle()
-            stream.toByteArray()
+            Log.i(TAG, "Image compressed: ${file.length()} bytes -> ${result.size} bytes (quality=$quality)")
+            result
         } catch (e: Exception) {
             Log.e(TAG, "Image compression failed, sending raw bytes", e)
             file.readBytes()
