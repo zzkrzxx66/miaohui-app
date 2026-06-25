@@ -42,31 +42,37 @@ class ImageRepository(private val context: Context) {
 
     fun isConfigured(): Boolean = SettingsManager.isConfigured(context)
 
-    suspend fun generateImage(prompt: String, size: String, quality: String): Result<ImageRecord> {
+    suspend fun generateImage(prompt: String, size: String, quality: String, n: Int = 1): Result<List<ImageRecord>> {
         return withContext(Dispatchers.IO) {
             val baseUrl = SettingsManager.getApiBaseUrl(context)
             val apiKey = SettingsManager.getApiKey(context)
             val model = SettingsManager.getModelName(context)
 
-            val result = ImageApiService.generateImage(baseUrl, apiKey, model, prompt, size, quality)
+            val result = ImageApiService.generateImage(baseUrl, apiKey, model, prompt, size, quality, n)
 
             result.fold(
-                onSuccess = { imageData ->
-                    val filePath = saveImageData(imageData)
-                    if (filePath != null) {
-                        val record = ImageRecord(
-                            prompt = prompt,
-                            imageFilePath = filePath,
-                            size = size,
-                            quality = quality,
-                            model = model,
-                            createdAt = System.currentTimeMillis(),
-                            type = "generate"
-                        )
-                        val id = dao.insert(record)
-                        Result.success(record.copy(id = id))
-                    } else {
+                onSuccess = { imageDataList ->
+                    val records = mutableListOf<ImageRecord>()
+                    for (imageData in imageDataList) {
+                        val filePath = saveImageData(imageData)
+                        if (filePath != null) {
+                            val record = ImageRecord(
+                                prompt = prompt,
+                                imageFilePath = filePath,
+                                size = size,
+                                quality = quality,
+                                model = model,
+                                createdAt = System.currentTimeMillis(),
+                                type = "generate"
+                            )
+                            val id = dao.insert(record)
+                            records.add(record.copy(id = id))
+                        }
+                    }
+                    if (records.isEmpty()) {
                         Result.failure(Exception("图片保存失败"))
+                    } else {
+                        Result.success(records)
                     }
                 },
                 onFailure = { Result.failure(it) }
@@ -78,29 +84,35 @@ class ImageRepository(private val context: Context) {
         sourceRecord: ImageRecord,
         editPrompt: String,
         size: String,
-        quality: String
+        quality: String,
+        maskPath: String? = null
     ): Result<ImageRecord> {
         return withContext(Dispatchers.IO) {
             val baseUrl = SettingsManager.getApiBaseUrl(context)
             val apiKey = SettingsManager.getApiKey(context)
             val model = SettingsManager.getModelName(context)
 
-            // Read source image bytes
             val sourceFile = File(sourceRecord.imageFilePath)
             if (!sourceFile.exists()) {
                 return@withContext Result.failure(Exception("原图文件不存在"))
             }
 
-            // Compress image before upload to avoid timeout
             val compressedBytes = compressImageForUpload(sourceFile)
             Log.i(TAG, "Image compressed: ${sourceFile.length()} bytes -> ${compressedBytes.size} bytes")
 
+            // Read mask if provided
+            val maskBytes = if (maskPath != null) {
+                val maskFile = File(maskPath)
+                if (maskFile.exists()) compressImageForUpload(maskFile) else null
+            } else null
+
             val result = ImageApiService.editImage(
-                baseUrl, apiKey, model, compressedBytes, editPrompt, size, quality
+                baseUrl, apiKey, model, listOf(compressedBytes), editPrompt, size, quality, maskBytes
             )
 
             result.fold(
-                onSuccess = { imageData ->
+                onSuccess = { imageDataList ->
+                    val imageData = imageDataList.firstOrNull() ?: return@fold Result.failure(Exception("无编辑结果"))
                     val filePath = saveImageData(imageData)
                     if (filePath != null) {
                         val record = ImageRecord(
@@ -117,6 +129,68 @@ class ImageRepository(private val context: Context) {
                         Result.success(record.copy(id = id))
                     } else {
                         Result.failure(Exception("编辑后的图片保存失败"))
+                    }
+                },
+                onFailure = { Result.failure(it) }
+            )
+        }
+    }
+
+    /**
+     * 多图编辑：上传多张参考图 + prompt → 融合生成新图片
+     */
+    suspend fun editImageMulti(
+        imagePaths: List<String>,
+        prompt: String,
+        size: String,
+        quality: String,
+        maskPath: String? = null
+    ): Result<ImageRecord> {
+        return withContext(Dispatchers.IO) {
+            val baseUrl = SettingsManager.getApiBaseUrl(context)
+            val apiKey = SettingsManager.getApiKey(context)
+            val model = SettingsManager.getModelName(context)
+
+            if (imagePaths.isEmpty()) {
+                return@withContext Result.failure(Exception("请至少选择一张图片"))
+            }
+
+            val compressedList = imagePaths.mapNotNull { path ->
+                val file = File(path)
+                if (file.exists()) compressImageForUpload(file) else null
+            }
+
+            if (compressedList.isEmpty()) {
+                return@withContext Result.failure(Exception("无法读取图片"))
+            }
+
+            val maskBytes = if (maskPath != null) {
+                val maskFile = File(maskPath)
+                if (maskFile.exists()) compressImageForUpload(maskFile) else null
+            } else null
+
+            val result = ImageApiService.editImage(
+                baseUrl, apiKey, model, compressedList, prompt, size, quality, maskBytes
+            )
+
+            result.fold(
+                onSuccess = { imageDataList ->
+                    val imageData = imageDataList.firstOrNull() ?: return@fold Result.failure(Exception("无编辑结果"))
+                    val filePath = saveImageData(imageData)
+                    if (filePath != null) {
+                        val record = ImageRecord(
+                            prompt = prompt,
+                            imageFilePath = filePath,
+                            size = size,
+                            quality = quality,
+                            model = model,
+                            createdAt = System.currentTimeMillis(),
+                            type = "multi_edit"
+                        )
+                        val id = dao.insert(record)
+                        Result.success(record.copy(id = id))
+                    } else {
+                        Result.failure(Exception("图片保存失败"))
                     }
                 },
                 onFailure = { Result.failure(it) }
@@ -158,11 +232,12 @@ class ImageRepository(private val context: Context) {
             Log.i(TAG, "Image-to-image: ref compressed ${savedRef.length()} -> ${compressedBytes.size} bytes")
 
             val result = ImageApiService.editImage(
-                baseUrl, apiKey, model, compressedBytes, prompt, size, quality
+                baseUrl, apiKey, model, listOf(compressedBytes), prompt, size, quality, null
             )
 
             result.fold(
-                onSuccess = { imageData ->
+                onSuccess = { imageDataList ->
+                    val imageData = imageDataList.firstOrNull() ?: return@fold Result.failure(Exception("无生成结果"))
                     val filePath = saveImageData(imageData)
                     if (filePath != null) {
                         val record = ImageRecord(

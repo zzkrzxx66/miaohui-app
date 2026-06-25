@@ -42,6 +42,7 @@ fun DetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var record by remember { mutableStateOf<ImageRecord?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val pptPsdState by viewModel.pptPsdState.collectAsState()
 
     val children by remember(recordId) {
         viewModel.repository.getChildRecords(recordId)
@@ -203,6 +204,101 @@ fun DetailScreen(
                 Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("分享图片")
+            }
+
+            // PPT / PSD generation
+            Spacer(Modifier.height(20.dp))
+            Text("可编辑文件", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.generatePpt(r) },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    enabled = !pptPsdState.isLoading
+                ) {
+                    Icon(Icons.Filled.Slideshow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("生成PPT")
+                }
+                OutlinedButton(
+                    onClick = { viewModel.generatePsd(r) },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    enabled = !pptPsdState.isLoading
+                ) {
+                    Icon(Icons.Filled.Layers, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("生成PSD")
+                }
+            }
+
+            // PPT/PSD progress
+            if (pptPsdState.isLoading) {
+                Spacer(Modifier.height(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "正在生成${if (pptPsdState.fileType == "ppt") "PPT" else "PSD"}文件... ${pptPsdState.status}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        if (pptPsdState.progress > 0) {
+                            Spacer(Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { pptPsdState.progress / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+
+            // PPT/PSD error
+            pptPsdState.error?.let { err ->
+                Spacer(Modifier.height(8.dp))
+                Text("❌ $err", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+
+            // PPT/PSD download
+            pptPsdState.downloadUrl?.let { url ->
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color.Transparent
+                ) {
+                    Box(
+                        modifier = Modifier.background(Brush.horizontalGradient(BrandGradient)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Download, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("下载${if (pptPsdState.fileType == "ppt") "PPT" else "PSD"}文件", color = Color.White, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { viewModel.clearPptPsdState() },
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("清除", style = MaterialTheme.typography.labelMedium) }
             }
 
             if (children.isNotEmpty()) {

@@ -256,6 +256,29 @@ fun GenerateScreen(
                     }
                 }
 
+                Spacer(Modifier.height(16.dp))
+
+                // Batch count selector
+                SectionTitle("生成数量")
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1, 2, 3, 4).forEach { count ->
+                        FilterChip(
+                            selected = state.batchCount == count,
+                            onClick = { viewModel.updateBatchCount(count) },
+                            label = { Text("${count}张") }
+                        )
+                    }
+                }
+                if (state.batchCount > 1 && state.referenceImagePath == null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "批量生成 ${state.batchCount} 张图，可从中挑选最满意的保存",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 Spacer(Modifier.height(24.dp))
 
                 // Generate button — gradient
@@ -309,7 +332,8 @@ fun GenerateScreen(
                 if (state.isLoading) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "高质量图片生成可能需要 30-120 秒",
+                        if (state.batchCount > 1) "正在生成 ${state.batchCount} 张图片，请稍候..."
+                        else "高质量图片生成可能需要 30-120 秒",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 8.dp)
@@ -318,27 +342,38 @@ fun GenerateScreen(
 
                 Spacer(Modifier.height(24.dp))
 
-                // Result
-                state.result?.let { record ->
-                    ResultImageCard(
-                        record = record,
-                        viewModel = viewModel,
-                        snackbarHostState = snackbarHostState,
-                        onEdit = { onNavigateToEdit(record.id) },
-                        onShare = {
-                            val file = File(record.imageFilePath)
-                            val uri = FileProvider.getUriForFile(
-                                context, "${context.packageName}.fileprovider", file
-                            )
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "image/png"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "分享图片"))
-                        },
-                        onNew = { viewModel.clearGenerateResult() }
-                    )
+                // Results (supports batch)
+                if (state.results.isNotEmpty()) {
+                    if (state.results.size > 1) {
+                        Text(
+                            "✨ 生成完成，共 ${state.results.size} 张",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    state.results.forEach { record ->
+                        ResultImageCard(
+                            record = record,
+                            viewModel = viewModel,
+                            snackbarHostState = snackbarHostState,
+                            onEdit = { onNavigateToEdit(record.id) },
+                            onShare = {
+                                val file = File(record.imageFilePath)
+                                val uri = FileProvider.getUriForFile(
+                                    context, "${context.packageName}.fileprovider", file
+                                )
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "image/png"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "分享图片"))
+                            },
+                            onNew = { viewModel.clearGenerateResult() }
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                 }
 
                 Spacer(Modifier.height(28.dp))

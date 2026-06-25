@@ -9,6 +9,7 @@ object SettingsManager {
     private const val KEY_API_URL = "api_base_url"
     private const val KEY_API_KEY = "api_key"
     private const val KEY_MODEL = "model_name"
+    private const val KEY_CACHED_MODELS = "cached_models"
 
     private fun getPrefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -32,6 +33,13 @@ object SettingsManager {
 
     fun setModelName(context: Context, model: String) {
         getPrefs(context).edit().putString(KEY_MODEL, model.trim()).apply()
+    }
+
+    fun getCachedModels(context: Context): String =
+        getPrefs(context).getString(KEY_CACHED_MODELS, "") ?: ""
+
+    fun setCachedModels(context: Context, models: String) {
+        getPrefs(context).edit().putString(KEY_CACHED_MODELS, models).apply()
     }
 
     fun isConfigured(context: Context): Boolean {

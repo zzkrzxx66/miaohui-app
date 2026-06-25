@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -23,12 +24,13 @@ import com.miaohui.app.viewmodel.MainViewModel
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     data object Generate : Screen("generate", "创作", Icons.Filled.AutoAwesome)
     data object History : Screen("history", "历史", Icons.Filled.History)
+    data object ServerImages : Screen("server_images", "云端", Icons.Filled.Cloud)
     data object Settings : Screen("settings", "设置", Icons.Filled.Settings)
     data object Detail : Screen("detail/{recordId}", "详情", Icons.Filled.AutoAwesome)
     data object Edit : Screen("edit/{recordId}", "编辑", Icons.Filled.AutoAwesome)
 }
 
-private val screens = listOf(Screen.Generate, Screen.History, Screen.Settings)
+private val screens = listOf(Screen.Generate, Screen.History, Screen.ServerImages, Screen.Settings)
 
 @Composable
 fun AppNavigation() {
@@ -101,8 +103,19 @@ fun AppNavigation() {
                     }
                 )
             }
+            composable(Screen.ServerImages.route) {
+                ServerImagesScreen(
+                    viewModel = viewModel,
+                    onBack = {
+                        navController.navigate(Screen.History.route) {
+                            popUpTo(navController.graph.startDestinationId)
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
             composable(Screen.Settings.route) {
-                SettingsScreen()
+                SettingsScreen(viewModel = viewModel)
             }
             composable(
                 Screen.Detail.route,

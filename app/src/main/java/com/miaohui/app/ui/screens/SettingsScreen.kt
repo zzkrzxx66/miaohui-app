@@ -21,11 +21,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.miaohui.app.data.SettingsManager
+import com.miaohui.app.network.ChatGpt2ApiService
 import com.miaohui.app.ui.theme.BrandGradient
+import com.miaohui.app.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     var apiUrl by remember { mutableStateOf(SettingsManager.getApiBaseUrl(context)) }
     var apiKey by remember { mutableStateOf(SettingsManager.getApiKey(context)) }
@@ -33,6 +35,11 @@ fun SettingsScreen() {
     var showPassword by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val modelListState by viewModel.modelListState.collectAsState()
+    val healthState by viewModel.healthState.collectAsState()
+
+    var modelMenuExpanded by remember { mutableStateOf(false) }
 
     fun save() {
         SettingsManager.setApiBaseUrl(context, apiUrl)
@@ -44,6 +51,14 @@ fun SettingsScreen() {
         if (saved) {
             snackbarHostState.showSnackbar("✅ 设置已保存")
             saved = false
+        }
+    }
+
+    // Auto-fetch models when API is configured
+    LaunchedEffect(apiUrl, apiKey) {
+        if (apiUrl.isNotEmpty() && apiKey.isNotEmpty()) {
+            viewModel.fetchModels()
+            viewModel.fetchHealth()
         }
     }
 
@@ -90,7 +105,7 @@ fun SettingsScreen() {
                         Text("API 配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "配置 OpenAI 兼容的图片生成 API",
+                            "配置 chatgpt2api 兼容的图片生成 API",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -101,7 +116,7 @@ fun SettingsScreen() {
                             value = apiUrl,
                             onValueChange = { apiUrl = it },
                             label = { Text("API Base URL") },
-                            placeholder = { Text("https://api.openai.com/v1") },
+                            placeholder = { Text("https://your-vps.com/v1") },
                             supportingText = { Text("不含末尾斜杠") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
@@ -131,22 +146,142 @@ fun SettingsScreen() {
 
                         Spacer(Modifier.height(12.dp))
 
-                        OutlinedTextField(
-                            value = modelName,
-                            onValueChange = { modelName = it },
-                            label = { Text("模型名称") },
-                            placeholder = { Text("gpt-image-2") },
-                            supportingText = { Text("默认 gpt-image-2") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp)
-                        )
+                        // Model dropdown or manual input
+                        if (modelListState.models.isNotEmpty()) {
+                            ExposedDropdownMenuBox(
+                                expanded = modelMenuExpanded,
+                                onExpandedChange = { modelMenuExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = modelName,
+                                    onValueChange = { },
+                                    label = { Text("模型") },
+                                    readOnly = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelMenuExpanded) },
+                                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = modelMenuExpanded,
+                                    onDismissRequest = { modelMenuExpanded = false }
+                                ) {
+                                    modelListState.models.forEach { model ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(model.id, fontWeight = FontWeight.Medium)
+                                                    if (model.ownedBy.isNotEmpty()) {
+                                                        Text(model.ownedBy, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    }
+                                                }
+                                            },
+                                            onClick = {
+                                                modelName = model.id
+                                                modelMenuExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            OutlinedTextField(
+                                value = modelName,
+                                onValueChange = { modelName = it },
+                                label = { Text("模型名称") },
+                                placeholder = { Text("gpt-image-2") },
+                                supportingText = {
+                                    Text(if (modelListState.isLoading) "正在获取模型列表..." else "默认 gpt-image-2")
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                trailingIcon = {
+                                    IconButton(onClick = { viewModel.fetchModels() }) {
+                                        Icon(Icons.Filled.Refresh, contentDescription = "刷新模型列表")
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
 
                 Spacer(Modifier.height(16.dp))
 
-                // Save button — gradient
+                // ===== Health Monitor Card =====
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(Modifier.padding(20.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("号池监控", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            IconButton(onClick = { viewModel.fetchHealth() }, enabled = !healthState.isLoading) {
+                                if (healthState.isLoading) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+
+                        val info = healthState.info
+                        if (info != null) {
+                            Row(Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${info.totalAccounts}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text("总账号", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${info.availableAccounts}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+                                    Text("可用", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${info.rateLimited}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                                    Text("限流", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${info.quotaLow}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                    Text("低额度", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            val availablePct = if (info.totalAccounts > 0) info.availableAccounts * 100 / info.totalAccounts else 0
+                            LinearProgressIndicator(
+                                progress = { availablePct / 100f },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (availablePct > 50) MaterialTheme.colorScheme.tertiary
+                                    else if (availablePct > 20) MaterialTheme.colorScheme.secondary
+                                    else MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "可用率 $availablePct% · ${info.status}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else if (healthState.error != null) {
+                            Text(
+                                "⚠️ ${healthState.error}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else if (healthState.isLoading) {
+                            Text("正在获取号池状态...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text("点击刷新按钮查看号池状态", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Save button
                 Surface(
                     onClick = { save(); saved = true },
                     modifier = Modifier.fillMaxWidth().height(54.dp),
@@ -178,19 +313,21 @@ fun SettingsScreen() {
                     Column(Modifier.padding(20.dp)) {
                         Text("📖 使用帮助", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(12.dp))
-                        HelpItem("1", "获取 API Key", "在 API 提供商网站注册并获取 Key")
+                        HelpItem("1", "配置 API", "填写 VPS 上 chatgpt2api 的地址和 Key")
                         Spacer(Modifier.height(10.dp))
-                        HelpItem("2", "填写 API 地址", "如 https://your-api.com/v1")
+                        HelpItem("2", "选择模型", "自动获取可用模型列表或手动输入")
                         Spacer(Modifier.height(10.dp))
-                        HelpItem("3", "开始创作", "输入描述，选择尺寸质量，点击生成")
+                        HelpItem("3", "批量生成", "选择 1-4 张批量出图，挑选满意的保存")
                         Spacer(Modifier.height(10.dp))
-                        HelpItem("4", "修改图片", "生成后点击「修改」，基于原图重新生成")
+                        HelpItem("4", "蒙版编辑", "上传蒙版图，只修改白色区域")
+                        Spacer(Modifier.height(10.dp))
+                        HelpItem("5", "PPT/PSD", "在详情页一键生成可编辑 PPT/PSD 文件")
                     }
                 }
 
                 Spacer(Modifier.height(16.dp))
 
-                // FAQ Card - 504 timeout notice
+                // FAQ Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -207,8 +344,7 @@ fun SettingsScreen() {
                                 "• 不是您的手机或网络问题\n" +
                                 "• App 会自动重试 3 次，请耐心等待\n" +
                                 "• 建议换个时间再试，或更换 API 地址",
-                            style = MaterialTheme.typography.bodySmall,
-                            lineHeight = MaterialTheme.typography.bodySmall.lineHeight
+                            style = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
@@ -216,7 +352,7 @@ fun SettingsScreen() {
                 Spacer(Modifier.height(24.dp))
 
                 Text(
-                    "妙绘 v1.3 · AI 图片生成与编辑",
+                    "妙绘 v2.0 · AI 图片生成与编辑 + chatgpt2api",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth(),

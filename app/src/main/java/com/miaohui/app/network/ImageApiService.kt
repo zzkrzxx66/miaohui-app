@@ -35,8 +35,9 @@ object ImageApiService {
         model: String,
         prompt: String,
         size: String,
-        quality: String
-    ): Result<String> {
+        quality: String,
+        n: Int = 1
+    ): Result<List<String>> {
         val url = "${normalizeBaseUrl(baseUrl)}/images/generations"
 
         val jsonBody = JSONObject().apply {
@@ -44,7 +45,7 @@ object ImageApiService {
             put("prompt", prompt)
             put("size", size)
             put("quality", quality)
-            put("n", 1)
+            put("n", n)
             put("response_format", "b64_json")
         }
 
@@ -52,11 +53,11 @@ object ImageApiService {
             .url(url)
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "application/json")
-            .header("User-Agent", "MiaoHui/1.3")
+            .header("User-Agent", "MiaoHui/2.0")
             .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        return executeWithRetry(request)
+        return executeWithRetryMulti(request)
     }
 
     /**
@@ -69,25 +70,13 @@ object ImageApiService {
         baseUrl: String,
         apiKey: String,
         model: String,
-        imageBytes: ByteArray,
+        imageBytesList: List<ByteArray>,
         prompt: String,
         size: String,
-        quality: String
-    ): Result<String> {
+        quality: String,
+        maskBytes: ByteArray? = null
+    ): Result<List<String>> {
         val url = "${normalizeBaseUrl(baseUrl)}/images/edits"
-
-        // Determine MIME type based on image header
-        val isPng = imageBytes.size > 4 &&
-            imageBytes[0] == 0x89.toByte() &&
-            imageBytes[1] == 0x50.toByte() &&
-            imageBytes[2] == 0x4E.toByte()
-        val mimeType = if (isPng) "image/png" else "image/jpeg"
-        val fileName = if (isPng) "source.png" else "source.jpg"
-
-        val imagePart = MultipartBody.Part.createFormData(
-            "image", fileName,
-            imageBytes.toRequestBody(mimeType.toMediaType())
-        )
 
         val multipartBuilder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -97,32 +86,54 @@ object ImageApiService {
             .addFormDataPart("quality", quality)
             .addFormDataPart("n", "1")
             .addFormDataPart("response_format", "b64_json")
-            .addPart(imagePart)
+
+        // Add one or more images
+        for ((index, imageBytes) in imageBytesList.withIndex()) {
+            val isPng = imageBytes.size > 4 &&
+                imageBytes[0] == 0x89.toByte() &&
+                imageBytes[1] == 0x50.toByte() &&
+                imageBytes[2] == 0x4E.toByte()
+            val mimeType = if (isPng) "image/png" else "image/jpeg"
+            val fieldName = if (imageBytesList.size == 1) "image" else "image[]"
+            val fileName = if (isPng) "source_$index.png" else "source_$index.jpg"
+            multipartBuilder.addFormDataPart(
+                fieldName, fileName,
+                imageBytes.toRequestBody(mimeType.toMediaType())
+            )
+        }
+
+        // Add mask if provided
+        if (maskBytes != null) {
+            val maskName = "mask.png"
+            multipartBuilder.addFormDataPart(
+                "mask", maskName,
+                maskBytes.toRequestBody("image/png".toMediaType())
+            )
+        }
 
         val request = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $apiKey")
-            .header("User-Agent", "MiaoHui/1.3")
+            .header("User-Agent", "MiaoHui/2.0")
             .post(multipartBuilder.build())
             .build()
 
-        return executeWithRetry(request)
+        return executeWithRetryMulti(request)
     }
 
     /**
-     * Execute request with automatic retry on transient failures (504, timeout).
+     * Execute request with automatic retry, returning multiple results.
      */
-    private fun executeWithRetry(request: Request): Result<String> {
+    private fun executeWithRetryMulti(request: Request): Result<List<String>> {
         var lastError: String = ""
         for (attempt in 1..MAX_RETRIES) {
             Log.d("ImageApiService", "API attempt $attempt/$MAX_RETRIES")
-            val result = executeRequest(request)
+            val result = executeRequestMulti(request)
             if (result.isSuccess) return result
 
             val error = result.exceptionOrNull()?.message ?: "未知错误"
             lastError = error
 
-            // Determine if we should retry
             val shouldRetry = error.contains("504") ||
                 error.contains("超时") ||
                 error.contains("timeout") ||
@@ -138,17 +149,95 @@ object ImageApiService {
 
         val finalMsg = if (lastError.contains("504") || lastError.contains("Gateway")) {
             "API 服务器网关超时 (504)。\n\n" +
-                "这是 API 服务端的限制，不是您的手机或网络问题。\n" +
-                "AI 处理图片需要较长时间，已自动重试 $MAX_RETRIES 次仍失败。\n" +
+                "已自动重试 $MAX_RETRIES 次仍失败。\n" +
                 "建议换个时间再试，或更换其他 API 地址。"
         } else if (lastError.contains("超时") || lastError.contains("timeout")) {
-            "请求超时。AI 处理图片需要较长时间，已自动重试 $MAX_RETRIES 次。\n" +
-                "建议更换网络环境或稍后重试。"
+            "请求超时。已自动重试 $MAX_RETRIES 次。建议稍后重试。"
         } else {
             lastError
         }
 
         return Result.failure(Exception(finalMsg))
+    }
+
+    private fun executeRequestMulti(request: Request): Result<List<String>> {
+        return try {
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+
+                if (response.code == 504) {
+                    return Result.failure(Exception("504 Gateway Timeout: 服务器网关超时"))
+                }
+
+                if (!response.isSuccessful) {
+                    val errorMsg = try {
+                        val json = JSONObject(body)
+                        val errObj = json.opt("error")
+                        if (errObj is JSONObject) {
+                            errObj.optString("message", body)
+                        } else {
+                            json.optString("error", body)
+                        }
+                    } catch (e: Exception) {
+                        "HTTP ${response.code}: ${body.take(300)}"
+                    }
+                    Log.e("ImageApiService", "API error (${'$'}{response.code}): $errorMsg")
+                    Result.failure(Exception(errorMsg))
+                } else {
+                    val json = JSONObject(body)
+                    val dataArray: JSONArray = json.optJSONArray("data")
+                        ?: return Result.failure(Exception("API 返回数据格式异常: ${body.take(200)}"))
+
+                    if (dataArray.length() == 0) {
+                        return Result.failure(Exception("API 返回空数据"))
+                    }
+
+                    val results = mutableListOf<String>()
+                    for (i in 0 until dataArray.length()) {
+                        val item = dataArray.getJSONObject(i)
+                        val b64 = item.optString("b64_json", "")
+                        if (b64.isNotEmpty()) {
+                            results.add(b64)
+                        } else {
+                            val imgUrl = item.optString("url", "")
+                            if (imgUrl.isNotEmpty()) {
+                                results.add("url:$imgUrl")
+                            }
+                        }
+                    }
+
+                    if (results.isEmpty()) {
+                        Result.failure(Exception("API 返回数据中无图片"))
+                    } else {
+                        Result.success(results)
+                    }
+                }
+            }
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.e("ImageApiService", "Timeout", e)
+            Result.failure(Exception("服务器响应超时"))
+        } catch (e: java.net.UnknownHostException) {
+            Log.e("ImageApiService", "Unknown host", e)
+            Result.failure(Exception("无法连接服务器，请检查 API 地址和网络"))
+        } catch (e: javax.net.ssl.SSLException) {
+            Log.e("ImageApiService", "SSL error", e)
+            Result.failure(Exception("网络连接异常: " + (e.message ?: "SSL错误")))
+        } catch (e: Exception) {
+            Log.e("ImageApiService", "Request failed", e)
+            Result.failure(Exception("请求失败: " + (e.message ?: "未知错误")))
+        }
+    }
+
+    /**
+     * Execute request with automatic retry on transient failures (504, timeout).
+     * Legacy single-result method for backward compatibility.
+     */
+    private fun executeWithRetry(request: Request): Result<String> {
+        val multiResult = executeWithRetryMulti(request)
+        return multiResult.fold(
+            onSuccess = { list -> if (list.isNotEmpty()) Result.success(list[0]) else Result.failure(Exception("无结果")) },
+            onFailure = { Result.failure(it) }
+        )
     }
 
     private fun executeRequest(request: Request): Result<String> {

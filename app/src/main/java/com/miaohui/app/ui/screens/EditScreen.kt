@@ -1,6 +1,8 @@
 package com.miaohui.app.ui.screens
 
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -40,6 +42,23 @@ fun EditScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Photo picker for mask image
+    val maskPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val cacheFile = File(context.cacheDir, "mask_${System.currentTimeMillis()}.png")
+            try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    cacheFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                viewModel.updateMaskPath(cacheFile.absolutePath)
+            } catch (e: Exception) {
+                scope.launch { snackbarHostState.showSnackbar("读取蒙版图片失败") }
+            }
+        }
+    }
 
     var sourceRecord by remember { mutableStateOf<com.miaohui.app.data.ImageRecord?>(null) }
     var loaded by remember { mutableStateOf(false) }
@@ -160,7 +179,61 @@ fun EditScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Size
+            // Mask upload (optional)
+            Text("蒙版编辑（可选）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "上传蒙版图，白色区域将被修改，黑色区域保持不变",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            if (state.maskPath != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                ) {
+                    AsyncImage(
+                        model = File(state.maskPath),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                    SmallFloatingActionButton(
+                        onClick = { viewModel.updateMaskPath(null) },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp),
+                        containerColor = Color.Black.copy(alpha = 0.6f)
+                    ) {
+                        Icon(Icons.Filled.Close, contentDescription = "移除蒙版", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+            } else {
+                Surface(
+                    onClick = { maskPicker.launch("image/*") },
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Brush, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text("🎭 上传蒙版图", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
             Text("尺寸比例", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
