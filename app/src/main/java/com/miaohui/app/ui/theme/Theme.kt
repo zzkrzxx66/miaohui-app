@@ -36,7 +36,10 @@ private val LightColorScheme = lightColorScheme(
     onSurfaceVariant = md_onSurfaceVariant,
     outline = md_outline,
     error = md_error,
-    onError = md_onError
+    onError = md_onError,
+    errorContainer = md_errorContainer,
+    onErrorContainer = md_onErrorContainer,
+    outlineVariant = md_outlineVariant
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -60,7 +63,10 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = md_onSurfaceVariant_d,
     outline = md_outline_d,
     error = md_error_d,
-    onError = md_onError_d
+    onError = md_onError_d,
+    errorContainer = md_errorContainer_d,
+    onErrorContainer = md_onErrorContainer_d,
+    outlineVariant = md_outlineVariant_d
 )
 
 /** 品牌渐变笔刷 */
